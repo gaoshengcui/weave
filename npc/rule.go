@@ -10,30 +10,37 @@ import (
 	"github.com/weaveworks/weave/npc/iptables"
 )
 
+type ruleHost interface {
+	// TODO(brb) rephrase
+	// getRuleSpec returns iptables rule spec used as destination (list of strings) and a comment.
+	//
+	// src denotes direction of the rule spec: if it's true, then the host
+	// is used as src, otherwise as dst.
+	getRuleSpec(src bool) ([]string, string)
+}
+
 type ruleSpec struct {
 	key        string
 	args       []string
 	policyType policyType
 }
 
-func newRuleSpec(policyType policyType, proto *string, srcHost *selectorSpec, dstHost *selectorSpec, dstPort *string) *ruleSpec {
+func newRuleSpec(policyType policyType, proto *string, srcHost, dstHost ruleHost, dstPort *string) *ruleSpec {
 	args := []string{}
 	if proto != nil {
 		args = append(args, "-p", *proto)
 	}
 	srcComment := "anywhere"
 	if srcHost != nil {
-		args = append(args, "-m", "set", "--match-set", string(srcHost.ipsetName), "src")
-		if srcHost.nsName != "" {
-			srcComment = fmt.Sprintf("pods: namespace: %s, selector: %s", srcHost.nsName, srcHost.key)
-		} else {
-			srcComment = fmt.Sprintf("namespaces: selector: %s", srcHost.key)
-		}
+		rule, comment := srcHost.getRuleSpec(true)
+		args = append(args, rule...)
+		srcComment = comment
 	}
 	dstComment := "anywhere"
 	if dstHost != nil {
-		args = append(args, "-m", "set", "--match-set", string(dstHost.ipsetName), "dst")
-		dstComment = fmt.Sprintf("pods: namespace: %s, selector: %s", dstHost.nsName, dstHost.key)
+		rule, comment := dstHost.getRuleSpec(false)
+		args = append(args, rule...)
+		dstComment = comment
 	}
 	if dstPort != nil {
 		args = append(args, "--dport", *dstPort)
